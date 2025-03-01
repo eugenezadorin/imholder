@@ -1,0 +1,13 @@
+bin/
+dist/
+/.idea/
+/.vscode/
+*.exe
+*.exe~
+*.test
+*.prof
+*.out
+*.log
+*.swp
+*.swo
+*.DS_Store
