@@ -109,8 +109,6 @@ The following environment variables can be used to configure the application:
 |------------------|--------------------------------------|---------------|
 | `IMHOLDER_PORT`  | Port on which the server will run.   | `8004`        |
 
----
-
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
