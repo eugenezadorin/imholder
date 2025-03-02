@@ -1,261 +1,209 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/basicfont"
-	"golang.org/x/image/math/fixed"
+	"github.com/fogleman/gg"
+	"github.com/golang/freetype/truetype"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
-// Функция для преобразования строки цвета в color.RGBA
-func parseColor(colorStr string) (color.RGBA, error) {
-	// Поддерживаемые названия цветов
-	colorNames := map[string]color.RGBA{
-		"red":    {255, 0, 0, 255},
-		"green":  {0, 255, 0, 255},
-		"blue":   {0, 0, 255, 255},
-		"orange": {255, 165, 0, 255},
-		"gray":   {128, 128, 128, 255},
-		// Добавьте другие цвета по необходимости
-	}
-
-	// Проверяем, является ли цвет именованным
-	if col, ok := colorNames[strings.ToLower(colorStr)]; ok {
-		return col, nil
-	}
-
-	// Пытаемся разобрать HEX-формат (например, "ff0000")
-	if len(colorStr) == 6 {
-		r, err := strconv.ParseUint(colorStr[0:2], 16, 8)
-		if err != nil {
-			return color.RGBA{}, fmt.Errorf("неверный формат HEX-кода")
-		}
-		g, err := strconv.ParseUint(colorStr[2:4], 16, 8)
-		if err != nil {
-			return color.RGBA{}, fmt.Errorf("неверный формат HEX-кода")
-		}
-		b, err := strconv.ParseUint(colorStr[4:6], 16, 8)
-		if err != nil {
-			return color.RGBA{}, fmt.Errorf("неверный формат HEX-кода")
-		}
-		return color.RGBA{uint8(r), uint8(g), uint8(b), 255}, nil
-	}
-
-	return color.RGBA{}, fmt.Errorf("неверный формат цвета")
-}
-
-func generateImage(width, height int, col color.RGBA) *image.RGBA {
-	// Создаем изображение с заданными размерами
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	// Заливаем изображение указанным цветом
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			img.Set(x, y, col)
-		}
-	}
-
-	return img
-}
-
-func addTextToImage(img *image.RGBA, text string, textColor color.RGBA) {
-	// Шрифт
-	face := basicfont.Face7x13
-
-	// Позиция текста (по центру)
-	textWidth := len(text) * face.Width
-	textHeight := face.Height
-	x := (img.Bounds().Dx() - textWidth) / 2
-	y := (img.Bounds().Dy()-textHeight)/2 + face.Ascent // Учитываем высоту шрифта
-
-	// Рисуем текст
-	d := &font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(textColor),
-		Face: face,
-		Dot:  fixed.Point26_6{X: fixed.Int26_6(x * 64), Y: fixed.Int26_6(y * 64)},
-	}
-	d.DrawString(text)
-}
-
-func generateSVG(width, height int, col color.RGBA, text string, textColor color.RGBA) string {
-	// Генерируем SVG как XML-строку
-	return fmt.Sprintf(
-		`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">
-            <rect width="%d" height="%d" fill="rgb(%d,%d,%d)" />
-            <text x="50%%" y="50%%" text-anchor="middle" fill="rgb(%d,%d,%d)" font-size="20">%s</text>
-        </svg>`,
-		width, height, width, height, col.R, col.G, col.B,
-		textColor.R, textColor.G, textColor.B, text,
-	)
-}
-
-// Функция для парсинга параметра delay
-func parseDelay(delayStr string) (int, error) {
-	if delayStr == "" {
-		return 0, nil // Значение по умолчанию
-	}
-
-	// Проверяем, есть ли диапазон
-	if strings.Contains(delayStr, ":") {
-		parts := strings.Split(delayStr, ":")
-		if len(parts) != 2 {
-			return 0, fmt.Errorf("неверный формат диапазона задержки")
-		}
-
-		min, err := strconv.Atoi(parts[0])
-		if err != nil || min < 0 {
-			return 0, fmt.Errorf("неверное значение минимальной задержки")
-		}
-
-		max, err := strconv.Atoi(parts[1])
-		if err != nil || max < 0 || max < min {
-			return 0, fmt.Errorf("неверное значение максимальной задержки")
-		}
-
-		// Возвращаем случайное число в диапазоне [min, max]
-		return min + rand.Intn(max-min+1), nil
-	}
-
-	// Если диапазона нет, парсим как число
-	delay, err := strconv.Atoi(delayStr)
-	if err != nil || delay < 0 {
-		return 0, fmt.Errorf("неверный формат задержки")
-	}
-
-	return delay, nil
-}
-
-func imageHandler(w http.ResponseWriter, r *http.Request) {
-	// Получаем задержку из GET-параметра
-	delayStr := r.URL.Query().Get("delay")
-	delay, err := parseDelay(delayStr)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Задержка перед обработкой запроса
-	time.Sleep(time.Duration(delay) * time.Millisecond)
-
-	// Извлекаем путь из URL (например, /150x200.jpg)
-	path := r.URL.Path[1:] // Убираем первый слэш
-
-	// Разделяем путь на размеры и формат
-	parts := strings.Split(path, ".")
-	if len(parts) > 2 {
-		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
-		return
-	}
-
-	// Определяем формат (по умолчанию PNG)
-	format := "png"
-	if len(parts) == 2 {
-		format = parts[1]
-	}
-
-	// Проверяем допустимость формата
-	if format != "png" && format != "jpg" && format != "svg" {
-		http.Error(w, "Допустимые форматы: png, jpg, svg", http.StatusBadRequest)
-		return
-	}
-
-	// Разделяем размеры на ширину и высоту
-	dimensions := strings.Split(parts[0], "x")
-	if len(dimensions) != 2 {
-		http.Error(w, "Используйте формат /ширинаxвысота (например, /100x200.jpg)", http.StatusBadRequest)
-		return
-	}
-
-	// Парсим ширину и высоту
-	width, err := strconv.Atoi(dimensions[0])
-	if err != nil {
-		http.Error(w, "Неверный формат ширины", http.StatusBadRequest)
-		return
-	}
-
-	height, err := strconv.Atoi(dimensions[1])
-	if err != nil {
-		http.Error(w, "Неверный формат высоты", http.StatusBadRequest)
-		return
-	}
-
-	// Получаем цвет фона из GET-параметра
-	colorStr := r.URL.Query().Get("color")
-	if colorStr == "" {
-		colorStr = "gray" // Цвет по умолчанию
-	}
-
-	// Парсим цвет фона
-	col, err := parseColor(colorStr)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Получаем текст из GET-параметра
-	text := r.URL.Query().Get("text")
-	if text == "" {
-		text = fmt.Sprintf("%dx%d", width, height) // Текст по умолчанию
-	}
-
-	// Получаем цвет текста из GET-параметра
-	textColorStr := r.URL.Query().Get("text_color")
-	if textColorStr == "" {
-		textColorStr = "000000" // Черный цвет по умолчанию
-	}
-
-	// Парсим цвет текста
-	textColor, err := parseColor(textColorStr)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Генерируем изображение или SVG в зависимости от формата
-	switch format {
-	case "png", "jpg":
-		img := generateImage(width, height, col)
-		addTextToImage(img, text, textColor)
-
-		// Устанавливаем заголовок Content-Type
-		if format == "png" {
-			w.Header().Set("Content-Type", "image/png")
-			if err := png.Encode(w, img); err != nil {
-				http.Error(w, "Ошибка при генерации PNG", http.StatusInternalServerError)
-			}
-		} else {
-			w.Header().Set("Content-Type", "image/jpeg")
-			if err := jpeg.Encode(w, img, nil); err != nil {
-				http.Error(w, "Ошибка при генерации JPEG", http.StatusInternalServerError)
-			}
-		}
-	case "svg":
-		svg := generateSVG(width, height, col, text, textColor)
-		w.Header().Set("Content-Type", "image/svg+xml")
-		w.Write([]byte(svg))
-	}
-}
+var (
+	port = flag.Int("port", 8004, "Port to run the server on")
+)
 
 func main() {
-	// Инициализируем генератор случайных чисел
-	rand.Seed(time.Now().UnixNano())
+	flag.Parse()
 
-	http.HandleFunc("/", imageHandler)
-
-	port := ":8001"
-	fmt.Printf("Сервер запущен на http://localhost%s\n", port)
-	if err := http.ListenAndServe(port, nil); err != nil {
-		fmt.Printf("Ошибка при запуске сервера: %s\n", err)
+	// Переопределяем порт через переменную окружения, если она задана
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		if p, err := strconv.Atoi(envPort); err == nil {
+			*port = p
+		}
 	}
+
+	http.HandleFunc("/", handleRequest)
+	fmt.Printf("Server is running on port %d...\n", *port)
+	http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
+}
+
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Парсинг пути
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	parts := strings.Split(path, ".")
+	if len(parts) < 1 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// Парсинг размеров
+	sizeParts := strings.Split(parts[0], "x")
+	if len(sizeParts) != 2 {
+		http.Error(w, "Invalid size format", http.StatusBadRequest)
+		return
+	}
+	width, err := strconv.Atoi(sizeParts[0])
+	if err != nil {
+		http.Error(w, "Invalid width", http.StatusBadRequest)
+		return
+	}
+	height, err := strconv.Atoi(sizeParts[1])
+	if err != nil {
+		http.Error(w, "Invalid height", http.StatusBadRequest)
+		return
+	}
+
+	// Парсинг формата
+	format := "png"
+	if len(parts) > 1 {
+		format = parts[1]
+	}
+	if format != "png" && format != "jpg" && format != "svg" {
+		http.Error(w, "Invalid format", http.StatusBadRequest)
+		return
+	}
+
+	// Парсинг параметров запроса
+	query := r.URL.Query()
+	bgColor := query.Get("bg")
+	text := query.Get("text")
+	textColor := query.Get("text_color")
+	delay := query.Get("delay")
+
+	// Установка текста по умолчанию
+	if text == "" {
+		text = fmt.Sprintf("%dx%d", width, height)
+	}
+
+	// Обработка задержки
+	if delay != "" {
+		delayParts := strings.Split(delay, "-")
+		if len(delayParts) == 1 {
+			delayMs, err := strconv.Atoi(delayParts[0])
+			if err != nil {
+				http.Error(w, "Invalid delay", http.StatusBadRequest)
+				return
+			}
+			time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		} else if len(delayParts) == 2 {
+			minDelay, err := strconv.Atoi(delayParts[0])
+			if err != nil {
+				http.Error(w, "Invalid delay range", http.StatusBadRequest)
+				return
+			}
+			maxDelay, err := strconv.Atoi(delayParts[1])
+			if err != nil {
+				http.Error(w, "Invalid delay range", http.StatusBadRequest)
+				return
+			}
+			delayMs := rand.Intn(maxDelay-minDelay) + minDelay
+			time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		} else {
+			http.Error(w, "Invalid delay format", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Генерация изображения
+	img, err := generateImage(width, height, bgColor, text, textColor)
+	if err != nil {
+		http.Error(w, "Failed to generate image", http.StatusInternalServerError)
+		return
+	}
+
+	// Отправка изображения
+	switch format {
+	case "png":
+		w.Header().Set("Content-Type", "image/png")
+		png.Encode(w, img)
+	case "jpg":
+		w.Header().Set("Content-Type", "image/jpeg")
+		jpeg.Encode(w, img, nil)
+	case "svg":
+		w.Header().Set("Content-Type", "image/svg+xml")
+		generateSVG(width, height, bgColor, text, textColor, w)
+	default:
+		http.Error(w, "Unsupported format", http.StatusBadRequest)
+	}
+}
+
+func generateImage(width, height int, bgColor, text, textColor string) (image.Image, error) {
+	// Создание изображения
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	// Установка цвета фона
+	bg := parseColor(bgColor)
+	draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
+
+	// Рисование текста
+	dc := gg.NewContext(width, height)
+	dc.SetColor(bg)
+	dc.Clear()
+	dc.SetColor(parseColor(textColor))
+
+	font, err := truetype.Parse(goregular.TTF)
+	if err != nil {
+		return nil, err
+	}
+	face := truetype.NewFace(font, &truetype.Options{Size: 48})
+	dc.SetFontFace(face)
+
+	dc.DrawStringAnchored(text, float64(width)/2, float64(height)/2, 0.5, 0.5)
+	return dc.Image(), nil
+}
+
+func generateSVG(width, height int, bgColor, text, textColor string, w http.ResponseWriter) {
+	bg := parseColor(bgColor)
+	textCol := parseColor(textColor)
+
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">
+		<rect width="%d" height="%d" fill="%s"/>
+		<text x="50%%" y="50%%" font-size="48" fill="%s" text-anchor="middle" dominant-baseline="middle">%s</text>
+	</svg>`, width, height, width, height, colorToHex(bg), colorToHex(textCol), text)
+
+	w.Write([]byte(svg))
+}
+
+func parseColor(colorStr string) color.Color {
+	// Предустановленные цвета
+	colors := map[string]color.RGBA{
+		"red":    {255, 0, 0, 255},
+		"orange": {255, 165, 0, 255},
+		"green":  {0, 128, 0, 255},
+	}
+
+	if c, ok := colors[colorStr]; ok {
+		return c
+	}
+
+	// Парсинг hex-кода
+	if strings.HasPrefix(colorStr, "#") {
+		colorStr = colorStr[1:]
+	}
+	if len(colorStr) == 6 {
+		r, _ := strconv.ParseUint(colorStr[0:2], 16, 8)
+		g, _ := strconv.ParseUint(colorStr[2:4], 16, 8)
+		b, _ := strconv.ParseUint(colorStr[4:6], 16, 8)
+		return color.RGBA{uint8(r), uint8(g), uint8(b), 255}
+	}
+
+	// Возвращаем белый цвет по умолчанию
+	return color.RGBA{255, 255, 255, 255}
+}
+
+func colorToHex(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02X%02X%02X", uint8(r>>8), uint8(g>>8), uint8(b>>8))
 }
