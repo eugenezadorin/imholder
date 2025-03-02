@@ -108,7 +108,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Invalid delay range", http.StatusBadRequest)
 				return
 			}
-			delayMs := rand.Intn(maxDelay-minDelay) + minDelay
+			delayMs := rand.Intn(maxDelay-minDelay+1) + minDelay
 			time.Sleep(time.Duration(delayMs) * time.Millisecond)
 		} else {
 			http.Error(w, "Invalid delay format", http.StatusBadRequest)
@@ -144,20 +144,26 @@ func generateImage(width, height int, bgColor, text, textColor string) (image.Im
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	// Установка цвета фона
-	bg := parseColor(bgColor)
+	bg := parseColor(bgColor, true)
 	draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 
 	// Рисование текста
 	dc := gg.NewContext(width, height)
 	dc.SetColor(bg)
 	dc.Clear()
-	dc.SetColor(parseColor(textColor))
+	dc.SetColor(parseColor(textColor, false))
 
 	font, err := truetype.Parse(goregular.TTF)
 	if err != nil {
 		return nil, err
 	}
-	face := truetype.NewFace(font, &truetype.Options{Size: 48})
+
+	// Размер шрифта пропорционален размеру изображения
+	fontSize := float64(width) / 10
+	if fontSize < 12 {
+		fontSize = 12
+	}
+	face := truetype.NewFace(font, &truetype.Options{Size: fontSize})
 	dc.SetFontFace(face)
 
 	dc.DrawStringAnchored(text, float64(width)/2, float64(height)/2, 0.5, 0.5)
@@ -165,25 +171,48 @@ func generateImage(width, height int, bgColor, text, textColor string) (image.Im
 }
 
 func generateSVG(width, height int, bgColor, text, textColor string, w http.ResponseWriter) {
-	bg := parseColor(bgColor)
-	textCol := parseColor(textColor)
+	bg := parseColor(bgColor, true)
+	textCol := parseColor(textColor, false)
+
+	// Размер шрифта пропорционален размеру изображения
+	fontSize := width / 10
+	if fontSize < 12 {
+		fontSize = 12
+	}
 
 	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">
 		<rect width="%d" height="%d" fill="%s"/>
-		<text x="50%%" y="50%%" font-size="48" fill="%s" text-anchor="middle" dominant-baseline="middle">%s</text>
-	</svg>`, width, height, width, height, colorToHex(bg), colorToHex(textCol), text)
+		<text x="50%%" y="50%%" font-size="%d" fill="%s" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">%s</text>
+	</svg>`, width, height, width, height, colorToHex(bg), fontSize, colorToHex(textCol), text)
 
 	w.Write([]byte(svg))
 }
 
-func parseColor(colorStr string) color.Color {
-	// Предустановленные цвета
+func parseColor(colorStr string, isBackground bool) color.Color {
+	// Предустановленные цвета (приятные оттенки)
 	colors := map[string]color.RGBA{
-		"red":    {255, 0, 0, 255},
-		"orange": {255, 165, 0, 255},
-		"green":  {0, 128, 0, 255},
+		"red":       {230, 57, 70, 255},   // Красный
+		"orange":    {255, 165, 0, 255},   // Оранжевый
+		"yellow":    {255, 200, 87, 255},  // Желтый
+		"green":     {60, 179, 113, 255},  // Зеленый
+		"blue":      {30, 144, 255, 255},  // Синий
+		"purple":    {147, 112, 219, 255}, // Фиолетовый
+		"pink":      {255, 182, 193, 255}, // Розовый
+		"brown":     {139, 69, 19, 255},   // Коричневый
+		"gray":      {128, 128, 128, 255}, // Серый
+		"lightgray": {211, 211, 211, 255}, // Светло-серый
+		"darkgray":  {64, 64, 64, 255},    // Темно-серый
 	}
 
+	// Цвет по умолчанию
+	if colorStr == "" {
+		if isBackground {
+			return colors["lightgray"] // Светло-серый для фона
+		}
+		return colors["darkgray"] // Темно-серый для текста
+	}
+
+	// Использование предустановленного цвета
 	if c, ok := colors[colorStr]; ok {
 		return c
 	}
@@ -199,8 +228,11 @@ func parseColor(colorStr string) color.Color {
 		return color.RGBA{uint8(r), uint8(g), uint8(b), 255}
 	}
 
-	// Возвращаем белый цвет по умолчанию
-	return color.RGBA{255, 255, 255, 255}
+	// Возвращаем цвет по умолчанию
+	if isBackground {
+		return colors["lightgray"]
+	}
+	return colors["darkgray"]
 }
 
 func colorToHex(c color.Color) string {
