@@ -27,8 +27,8 @@ var (
 func main() {
 	flag.Parse()
 
-	// Переопределяем порт через переменную окружения, если она задана
-	if envPort := os.Getenv("PORT"); envPort != "" {
+	// Переопределяем порт через переменную окружения с префиксом IMHOLDER
+	if envPort := os.Getenv("IMHOLDER_PORT"); envPort != "" {
 		if p, err := strconv.Atoi(envPort); err == nil {
 			*port = p
 		}
@@ -220,6 +220,9 @@ func parseColor(colorStr string, isBackground bool) color.Color {
 	// Парсинг hex-кода
 	if strings.HasPrefix(colorStr, "#") {
 		colorStr = colorStr[1:]
+	}
+	if len(colorStr) == 3 { // Сокращенный hex-код (например, f00)
+		colorStr = string([]byte{colorStr[0], colorStr[0], colorStr[1], colorStr[1], colorStr[2], colorStr[2]})
 	}
 	if len(colorStr) == 6 {
 		r, _ := strconv.ParseUint(colorStr[0:2], 16, 8)
