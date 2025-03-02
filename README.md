@@ -1,120 +1,116 @@
 # ImHolder
 
-**ImHolder** is a self-hosted image placeholder generator. It allows you to dynamically generate images with custom sizes, colors, text, and formats.
+**ImHolder** is a self-hosted image placeholder generator. It dynamically creates images with customizable size, background color, text, and format. The service is designed to be simple, flexible, and easy to integrate into your development workflow.
 
-## Disclaimer
-
-> This project was developed with the assistance of AI in a vibe coding style. While it has been tested, it is provided "as-is" without any warranties. Use it at your own risk.
+> **Disclaimer**: This project was developed with the assistance of AI in a "vibe coding" style. Use it at your own risk. The developers are not responsible for any issues that may arise from its use.
 
 ---
 
 ## Features
 
-- Generate images in **PNG**, **JPEG**, or **SVG** formats.
-- Customize image size, background color, text, and text color.
-- Simulate network delays with configurable delays (fixed or random range).
-- Lightweight and easy to self-host.
-
-## Use Cases
-
-- **Placeholder Images**: Quickly generate placeholder images for web development.
-- **Testing**: Simulate network delays for testing purposes.
-- **Prototyping**: Use custom images and text for UI/UX prototyping.
+- **Dynamic image generation**: Create images with custom dimensions, background colors, and text.
+- **Multiple formats**: Supports PNG, JPG, and SVG formats.
+- **Customizable colors**: Use predefined colors or specify custom hex codes.
+- **Text customization**: Add custom text or use the default text (image dimensions).
+- **Network delay simulation**: Simulate network delays for testing purposes.
 
 ## Installation
 
-1. **Install Go**:
-   Make sure you have Go installed on your system. You can download it from the [official website](https://golang.org/dl/).
-
-2. **Clone the repository**:
+1. **Clone the repository**:
    ```bash
    git clone https://github.com/eugenezadorin/imholder.git
    cd imholder
    ```
 
-3. **Run the server**:
+2. **Build the application**:
    ```bash
-   go run main.go
+   go build -o imholder .
    ```
 
-4. **Access the server**:
-   Open your browser and navigate to `http://localhost:8001`.
+3. **Run the server**:
+   ```bash
+   ./imholder
+   ```
+   By default, the server runs on port `8004`. You can change the port using the `IMHOLDER_PORT` environment variable or a command-line flag `-p`.
 
 ## Usage
 
-### Basic Image Generation
+### Endpoint
 
-To generate an image, use the following URL format:
+The service is accessible via the following URL pattern:
 
 ```
-http://localhost:8001/<width>x<height>.<format>?color=<color>&text=<text>&text_color=<text_color>&delay=<delay>
+/{width}x{height}.{format}?bg={background}&text={text}&text_color={text_color}&delay={delay}
 ```
 
-#### Parameters:
-
-| Parameter    | Description                                                                 | Default Value | Example Values          |
-|--------------|-----------------------------------------------------------------------------|---------------|-------------------------|
-| `width`      | Width of the image in pixels.                                               | Required      | `300`, `500`            |
-| `height`     | Height of the image in pixels.                                              | Required      | `200`, `400`            |
-| `format`     | Image format (`png`, `jpg`, or `svg`).                                      | `png`         | `png`, `jpg`, `svg`     |
-| `color`      | Background color in HEX format or color name (e.g., `red`, `blue`).         | `gray`        | `ff0000`, `00ff00`      |
-| `text`       | Text to display on the image.                                               | `<width>x<height>` | `Hello`, `Placeholder` |
-| `text_color` | Text color in HEX format or color name.                                     | `000000` (black) | `ffffff`, `ff0000`     |
-| `delay`      | Delay in milliseconds before responding (fixed or range, e.g., `500:1000`). | `0`           | `1000`, `500:1500`      |
+- `{width}`: Width of the image (e.g., `300`).
+- `{height}`: Height of the image (e.g., `200`).
+- `{format}`: Image format (`png`, `jpg`, or `svg`). Defaults to `png`.
+- `bg`: Background color (predefined color name or hex code). Defaults to light gray.
+- `text`: Custom text to display on the image. Defaults to the image dimensions (e.g., `300x200`).
+- `text_color`: Text color (predefined color name or hex code). Defaults to dark gray.
+- `delay`: Simulate network delay in milliseconds. Can be a single value (e.g., `500`) or a random value from range (e.g., `200-1000`).
 
 ### Examples
 
-1. **Simple Image**:
+1. **Basic image**:
    ```
-   http://localhost:8001/300x200.png
+   /300x200.png
    ```
-   - Generates a 300x200 PNG image with a gray background and the text "300x200".
+   Generates a 300x200 PNG image with a light gray background and the text "300x200" in dark gray.
 
-2. **Custom Background Color**:
+2. **Custom background and text**:
    ```
-   http://localhost:8001/300x200.png?color=ff0000
+   /400x300.jpg?bg=blue&text=Hello%20World&text_color=white
    ```
-   - Generates a 300x200 PNG image with a red background.
+   Generates a 400x300 JPG image with a blue background and the text "Hello World" in white.
 
-3. **Custom Text**:
+3. **Custom hex colors**:
    ```
-   http://localhost:8001/300x200.png?text=Hello%20World
+   /500x500.png?bg=ffcc00&text=Custom%20Colors&text_color=003366
    ```
-   - Generates a 300x200 PNG image with the text "Hello World".
+   Generates a 500x500 PNG image with a yellow background (`#ffcc00`) and the text "Custom Colors" in dark blue (`#003366`).
 
-4. **Custom Text Color**:
+4. **Simulate network delay**:
    ```
-   http://localhost:8001/300x200.png?text_color=ffffff
+   /600x400.svg?delay=1000
    ```
-   - Generates a 300x200 PNG image with white text.
+   Generates a 600x400 SVG image after a 1-second delay.
 
-5. **Fixed Delay**:
+5. **Random delay within a range**:
    ```
-   http://localhost:8001/300x200.png?delay=2000
+   /800x600.jpg?delay=200-1000
    ```
-   - Responds after a 2-second delay.
+   Generates an 800x600 JPG image after a random delay between 200ms and 1000ms.
 
-6. **Random Delay**:
-   ```
-   http://localhost:8001/300x200.png?delay=500:1500
-   ```
-   - Responds after a random delay between 500ms and 1500ms.
+## Predefined Colors
 
-7. **SVG Format**:
-   ```
-   http://localhost:8001/300x200.svg?color=00ff00&text=SVG%20Image
-   ```
-   - Generates a 300x200 SVG image with a green background and the text "SVG Image".
+The following predefined colors are available for the `bg` and `text_color` parameters:
+
+| Color Name | Hex Code  |
+|------------|-----------|
+| red        | `#E63946` |
+| orange     | `#FFA500` |
+| yellow     | `#FFC857` |
+| green      | `#3CB371` |
+| blue       | `#1E90FF` |
+| purple     | `#9370DB` |
+| pink       | `#FFB6C1` |
+| brown      | `#8B4513` |
+| gray       | `#808080` |
+| lightgray  | `#D3D3D3` |
+| darkgray   | `#404040` |
+
+## Environment Variables
+
+The following environment variables can be used to configure the application:
+
+| Variable         | Description                          | Default Value |
+|------------------|--------------------------------------|---------------|
+| `IMHOLDER_PORT`  | Port on which the server will run.   | `8004`        |
+
+---
 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
-
-## Acknowledgments
-
-- Developed with the assistance of AI in a vibe coding style.
-- Inspired by the need for simple, self-hosted placeholder image generators.
